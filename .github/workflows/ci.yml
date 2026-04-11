@@ -28,11 +28,11 @@ jobs:
       - name: Clone dependencies
         shell: bash
         run: |
-          git clone --depth 1 https://github.com/harmony-labs/meta_plugin_protocol.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_cli.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_core.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_git_lib.git
-          git clone --depth 1 https://github.com/harmony-labs/loop_lib.git
+          git clone --depth 1 https://github.com/gitkb/meta_plugin_protocol.git
+          git clone --depth 1 https://github.com/gitkb/meta_cli.git
+          git clone --depth 1 https://github.com/gitkb/meta_core.git
+          git clone --depth 1 https://github.com/gitkb/meta_git_lib.git
+          git clone --depth 1 https://github.com/gitkb/loop_lib.git
 
       - name: Create workspace Cargo.toml
         shell: bash
@@ -46,7 +46,7 @@ jobs:
           version = "0.1.0"
           edition = "2021"
           license = "MIT"
-          repository = "https://github.com/harmony-labs/meta"
+          repository = "https://github.com/gitkb/meta"
           EOF
 
       - name: Install Rust toolchain
@@ -72,11 +72,11 @@ jobs:
 
       - name: Clone dependencies
         run: |
-          git clone --depth 1 https://github.com/harmony-labs/meta_plugin_protocol.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_cli.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_core.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_git_lib.git
-          git clone --depth 1 https://github.com/harmony-labs/loop_lib.git
+          git clone --depth 1 https://github.com/gitkb/meta_plugin_protocol.git
+          git clone --depth 1 https://github.com/gitkb/meta_cli.git
+          git clone --depth 1 https://github.com/gitkb/meta_core.git
+          git clone --depth 1 https://github.com/gitkb/meta_git_lib.git
+          git clone --depth 1 https://github.com/gitkb/loop_lib.git
 
       - name: Create workspace Cargo.toml
         run: |
@@ -89,7 +89,7 @@ jobs:
           version = "0.1.0"
           edition = "2021"
           license = "MIT"
-          repository = "https://github.com/harmony-labs/meta"
+          repository = "https://github.com/gitkb/meta"
           EOF
 
       - name: Install Rust toolchain
@@ -117,11 +117,11 @@ jobs:
 
       - name: Clone dependencies
         run: |
-          git clone --depth 1 https://github.com/harmony-labs/meta_plugin_protocol.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_cli.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_core.git
-          git clone --depth 1 https://github.com/harmony-labs/meta_git_lib.git
-          git clone --depth 1 https://github.com/harmony-labs/loop_lib.git
+          git clone --depth 1 https://github.com/gitkb/meta_plugin_protocol.git
+          git clone --depth 1 https://github.com/gitkb/meta_cli.git
+          git clone --depth 1 https://github.com/gitkb/meta_core.git
+          git clone --depth 1 https://github.com/gitkb/meta_git_lib.git
+          git clone --depth 1 https://github.com/gitkb/loop_lib.git
 
       - name: Create workspace Cargo.toml
         run: |
@@ -134,7 +134,7 @@ jobs:
           version = "0.1.0"
           edition = "2021"
           license = "MIT"
-          repository = "https://github.com/harmony-labs/meta"
+          repository = "https://github.com/gitkb/meta"
           EOF
 
       - name: Install Rust toolchain
