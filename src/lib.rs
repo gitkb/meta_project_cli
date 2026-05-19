@@ -3,6 +3,7 @@
 //! Provides project management commands for meta repositories.
 
 use meta_cli::config::{self, MetaTreeNode, ProjectInfo};
+use meta_cli::worktree;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -49,7 +50,18 @@ pub struct ProjectListOutput {
     pub repo: String,
     pub root: String,
     pub cwd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<ProjectListWorktree>,
     pub projects: Vec<ProjectTreeNode>,
+}
+
+/// Linked worktree context for project list output.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectListWorktree {
+    pub linked: bool,
+    pub physical_root: String,
+    pub canonical_root: String,
+    pub name: String,
 }
 
 // ============================================================================
@@ -320,8 +332,8 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
     let abs_cwd = cwd
         .canonicalize()
         .unwrap_or_else(|_| cwd.to_path_buf())
-        .to_string_lossy()
-        .to_string();
+        .to_path_buf();
+    let abs_cwd_string = abs_cwd.to_string_lossy().to_string();
 
     if options.json_output {
         // `root` = the .meta config directory relevant to this invocation:
@@ -341,11 +353,35 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
             .unwrap_or(root_dir)
             .to_string_lossy()
             .to_string();
+        let linked_worktree =
+            worktree::detect_worktree_context(&abs_cwd).map(|(name, task_dir, _repos)| {
+                let canonical_root = worktree::discover_worktree_repos(&task_dir)
+                    .ok()
+                    .and_then(|repos| {
+                        repos
+                            .into_iter()
+                            .find(|repo| repo.alias == ".")
+                            .map(|repo| repo.source_path)
+                    })
+                    .unwrap_or_else(|| Path::new(&abs_root).to_path_buf());
+
+                ProjectListWorktree {
+                    linked: true,
+                    physical_root: task_dir.to_string_lossy().to_string(),
+                    canonical_root: canonical_root.to_string_lossy().to_string(),
+                    name,
+                }
+            });
+        let abs_root = linked_worktree
+            .as_ref()
+            .map(|wt| wt.canonical_root.clone())
+            .unwrap_or(abs_root);
         let output = ProjectListOutput {
             path: ".".to_string(),
             repo: root_repo,
             root: abs_root,
-            cwd: abs_cwd,
+            cwd: abs_cwd_string,
+            worktree: linked_worktree,
             projects: project_nodes,
         };
         let json = match serde_json::to_string_pretty(&output) {
@@ -630,6 +666,14 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    fn comparable_path(path: &Path) -> String {
+        comparable_path_str(&path.to_string_lossy())
+    }
+
+    fn comparable_path_str(path: &str) -> String {
+        path.trim_start_matches("\\\\?\\").replace('\\', "/")
+    }
+
     #[test]
     fn test_execute_command_no_meta_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -913,6 +957,84 @@ mod tests {
                 assert!(
                     std::path::Path::new(root).is_absolute(),
                     "root should be absolute, got: {root}"
+                );
+            }
+            _ => panic!("Expected Message result"),
+        }
+    }
+
+    #[test]
+    fn test_project_list_json_includes_linked_worktree_context() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join(".meta"),
+            r#"{"projects": {"repo1": "git@github.com:org/repo1.git"}}"#,
+        )
+        .unwrap();
+
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(temp_dir.path())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "test@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["remote", "add", "origin", "git@github.com:org/root.git"]);
+        git(&["add", ".meta"]);
+        git(&["commit", "-q", "-m", "initial meta config"]);
+
+        let worktrees = temp_dir.path().join(".worktrees");
+        std::fs::create_dir_all(&worktrees).unwrap();
+        let linked = worktrees.join("feature");
+        git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature",
+            linked.to_str().unwrap(),
+        ]);
+
+        let options = ExecuteOptions {
+            json_output: true,
+            ..Default::default()
+        };
+        let result = execute_command("project list", &[], &options, &[], &linked);
+
+        match result {
+            CommandResult::Message(msg) => {
+                let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
+                let expected_root = comparable_path(&temp_dir.path().canonicalize().unwrap());
+                let expected_linked = comparable_path(&linked.canonicalize().unwrap());
+                let worktree = parsed["worktree"]
+                    .as_object()
+                    .expect("worktree field should be present");
+                assert_eq!(worktree["linked"], true);
+                assert_eq!(
+                    worktree["physical_root"].as_str().map(comparable_path_str),
+                    Some(expected_linked.clone())
+                );
+                assert_eq!(
+                    worktree["canonical_root"].as_str().map(comparable_path_str),
+                    Some(expected_root.clone())
+                );
+                assert_eq!(worktree["name"].as_str(), Some("feature"));
+                assert_eq!(
+                    parsed["root"].as_str().map(comparable_path_str),
+                    Some(expected_root)
+                );
+                assert_eq!(
+                    parsed["cwd"].as_str().map(comparable_path_str),
+                    Some(expected_linked)
                 );
             }
             _ => panic!("Expected Message result"),
