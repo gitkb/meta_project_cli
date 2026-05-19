@@ -67,9 +67,8 @@ pub fn execute_command(
     provided_projects: &[String],
     cwd: &Path,
 ) -> CommandResult {
-    // Intercept --help/-h before dispatching to subcommand handlers
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        return CommandResult::ShowHelp(None);
+    if has_help_token(command, args) {
+        return project_command_help(command);
     }
 
     // project dependents reads the dependency graph directly
@@ -126,6 +125,100 @@ pub fn execute_command(
             "unrecognized command '{command}'. Use 'meta git update' to sync projects."
         ))),
     }
+}
+
+fn has_help_token(command: &str, args: &[String]) -> bool {
+    command
+        .split_whitespace()
+        .chain(args.iter().map(String::as_str))
+        .any(|arg| arg == "--help" || arg == "-h")
+}
+
+fn project_command_help(command: &str) -> CommandResult {
+    let words: Vec<&str> = command
+        .split_whitespace()
+        .filter(|word| *word != "--help" && *word != "-h")
+        .collect();
+    let subcommand = words.get(1).copied();
+
+    let help = match subcommand {
+        Some("list") | Some("ls") => {
+            r#"meta project list - Inspect the meta repo graph
+
+Usage: meta project list [OPTIONS]
+
+Options:
+  --json          Emit a structured tree with root, cwd, project paths, repo URLs, tags, and nested projects
+  --recursive    Include projects from nested meta repos
+  --depth <N>    Limit recursive traversal depth
+
+Agent hints:
+  Use `meta project list --recursive --json` before broad changes to discover the full repo graph.
+  Use non-recursive output for a quick human-readable view of the current meta repo.
+
+Examples:
+  meta project list
+  meta project list --recursive
+  meta project list --recursive --json"#
+        }
+        Some("check") => {
+            r#"meta project check - Verify configured projects are present
+
+Usage: meta project check [OPTIONS]
+
+Options:
+  --recursive    Check nested meta repos as well
+  --depth <N>    Limit recursive traversal depth
+
+Agent hints:
+  Run this when commands fail because a child checkout is missing.
+  Missing repos can usually be cloned with `meta git update`.
+
+Examples:
+  meta project check
+  meta project check --recursive"#
+        }
+        Some("dependents") => {
+            r#"meta project dependents - Find projects that depend on another project
+
+Usage: meta project dependents <PROJECT> [OPTIONS]
+
+Arguments:
+  <PROJECT>      Project name or provided capability to search for
+
+Options:
+  --json         Emit machine-readable dependent project records
+
+Agent hints:
+  Use this before changing shared libraries or APIs to identify likely blast radius.
+  Pair with `meta project list --recursive --json` when working across nested meta repos.
+
+Examples:
+  meta project dependents meta_core
+  meta project dependents auth --json"#
+        }
+        _ => {
+            r#"meta project - Inspect and validate meta workspace projects
+
+Usage: meta project <COMMAND>
+
+Commands:
+  list          List projects defined in .meta (alias: ls)
+  check         Verify configured projects are cloned
+  dependents    List projects that depend on a project or capability
+
+Agent hints:
+  Prefer `meta project list --recursive --json` for codebase discovery.
+  Use `meta project check --recursive` before assuming a repo is intentionally absent.
+
+Examples:
+  meta project list --recursive --json
+  meta project check
+  meta project dependents meta_core"#
+        }
+    };
+
+    CommandResult::Message(help.to_string())
 }
 
 /// Execute a project command recursively across provided project directories
