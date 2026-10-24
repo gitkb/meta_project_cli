@@ -391,7 +391,7 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
         CommandResult::Message(json)
     } else {
         let mut output = String::new();
-        output.push_str(&format!(". ({root_repo})\n"));
+        output.push_str(&format!(". ({})\n", remote_label(Some(&root_repo))));
         format_project_tree(&project_nodes, &mut output, "");
         if output.ends_with('\n') {
             output.pop();
@@ -426,7 +426,13 @@ fn get_git_remote_url(dir: &Path) -> Option<String> {
     }
 }
 
-/// Format a project tree with box-drawing characters
+/// A project's remote URL as shown in `meta project list`.
+fn remote_label(repo: Option<&str>) -> &str {
+    repo.filter(|r| !r.is_empty()).unwrap_or("no remote")
+}
+
+/// Format a project tree with box-drawing characters: each project's name, its
+/// path when that differs from the name, and its remote URL
 fn format_project_tree(nodes: &[ProjectTreeNode], output: &mut String, prefix: &str) {
     for (i, node) in nodes.iter().enumerate() {
         let is_last = i == nodes.len() - 1;
@@ -442,9 +448,20 @@ fn format_project_tree(nodes: &[ProjectTreeNode], output: &mut String, prefix: &
             format!(" [{}]", node.tags.join(", "))
         };
 
+        let path_str = if node.path == node.name {
+            String::new()
+        } else {
+            format!(" \u{2192} {}", node.path)
+        };
+
         output.push_str(&format!(
-            "{}{}{} ({}){}\n",
-            prefix, connector, node.name, node.path, tags_str
+            "{}{}{}{} ({}){}\n",
+            prefix,
+            connector,
+            node.name,
+            path_str,
+            remote_label(node.repo.as_deref()),
+            tags_str
         ));
 
         if !node.projects.is_empty() {
@@ -913,14 +930,27 @@ mod tests {
 
         let mut output = String::new();
         format_project_tree(&nodes, &mut output, "");
-        assert!(output.contains("api"));
-        assert!(output.contains("services/api"));
-        assert!(output.contains("[backend]"));
-        assert!(output.contains("frontend"));
-        // Last item uses └──
-        assert!(output.contains("\u{2514}\u{2500}\u{2500}"));
-        // Non-last item uses ├──
-        assert!(output.contains("\u{251c}\u{2500}\u{2500}"));
+        assert_eq!(
+            output,
+            "\u{251c}\u{2500}\u{2500} api \u{2192} services/api (git@github.com:org/api.git) [backend]\n\
+             \u{2514}\u{2500}\u{2500} frontend (git@github.com:org/frontend.git)\n"
+        );
+    }
+
+    #[test]
+    fn test_format_project_tree_without_remote() {
+        let nodes = vec![ProjectTreeNode {
+            name: "scratch".to_string(),
+            path: "scratch".to_string(),
+            repo: None,
+            tags: vec![],
+            is_meta: false,
+            projects: vec![],
+        }];
+
+        let mut output = String::new();
+        format_project_tree(&nodes, &mut output, "");
+        assert_eq!(output, "\u{2514}\u{2500}\u{2500} scratch (no remote)\n");
     }
 
     #[test]
