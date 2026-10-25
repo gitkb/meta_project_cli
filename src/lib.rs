@@ -3,8 +3,10 @@
 //! Provides project management commands for meta repositories.
 
 use meta_cli::config::{self, MetaTreeNode, ProjectInfo};
+use meta_cli::display::escape;
 use meta_cli::worktree;
 use serde::Serialize;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Command;
@@ -443,8 +445,9 @@ fn get_git_remote_url(dir: &Path) -> Option<String> {
 }
 
 /// A project's remote URL as shown in `meta project list`.
-fn remote_label(repo: Option<&str>) -> &str {
-    repo.filter(|r| !r.is_empty()).unwrap_or("no remote")
+fn remote_label(repo: Option<&str>) -> Cow<'_, str> {
+    repo.filter(|r| !r.is_empty())
+        .map_or(Cow::Borrowed("no remote"), escape)
 }
 
 /// Format a project tree with box-drawing characters: each project's name, its
@@ -461,20 +464,21 @@ fn format_project_tree(nodes: &[ProjectTreeNode], output: &mut String, prefix: &
         let tags_str = if node.tags.is_empty() {
             String::new()
         } else {
-            format!(" [{}]", node.tags.join(", "))
+            let tags: Vec<_> = node.tags.iter().map(|t| escape(t)).collect();
+            format!(" [{}]", tags.join(", "))
         };
 
         let path_str = if node.path == node.name {
             String::new()
         } else {
-            format!(" \u{2192} {}", node.path)
+            format!(" \u{2192} {}", escape(&node.path))
         };
 
         output.push_str(&format!(
             "{}{}{}{} ({}){}\n",
             prefix,
             connector,
-            node.name,
+            escape(&node.name),
             path_str,
             remote_label(node.repo.as_deref()),
             tags_str
@@ -565,7 +569,10 @@ fn handle_project_dependents(
     };
 
     let Some(dependents) = find_dependents(&project_name, &all_projects) else {
-        return CommandResult::Error(format!("Unknown project or alias: {project_name}"));
+        return CommandResult::Error(format!(
+            "Unknown project or alias: {}",
+            escape(&project_name)
+        ));
     };
 
     if options.json_output {
@@ -576,9 +583,13 @@ fn handle_project_dependents(
         CommandResult::Message(json)
     } else {
         if dependents.is_empty() {
-            CommandResult::Message(format!("No projects depend on '{project_name}'."))
+            CommandResult::Message(format!(
+                "No projects depend on '{}'.",
+                escape(&project_name)
+            ))
         } else {
-            CommandResult::Message(dependents.join("\n"))
+            let names: Vec<_> = dependents.iter().map(|d| escape(d)).collect();
+            CommandResult::Message(names.join("\n"))
         }
     }
 }
@@ -955,6 +966,25 @@ mod tests {
             output,
             "\u{251c}\u{2500}\u{2500} api \u{2192} services/api (git@github.com:org/api.git) [backend]\n\
              \u{2514}\u{2500}\u{2500} frontend (git@github.com:org/frontend.git)\n"
+        );
+    }
+
+    #[test]
+    fn test_format_project_tree_escapes_control_characters() {
+        let nodes = vec![ProjectTreeNode {
+            name: "x\u{1b}]0;PWNED\u{7}".to_string(),
+            path: "t\u{1b}[1A".to_string(),
+            repo: Some("u\u{9b}2J".to_string()),
+            tags: vec!["n\nfake".to_string()],
+            is_meta: false,
+            projects: vec![],
+        }];
+
+        let mut output = String::new();
+        format_project_tree(&nodes, &mut output, "");
+        assert_eq!(
+            output,
+            "\u{2514}\u{2500}\u{2500} x\\u{1b}]0;PWNED\\u{7} \u{2192} t\\u{1b}[1A (u\\u{9b}2J) [n\\nfake]\n"
         );
     }
 

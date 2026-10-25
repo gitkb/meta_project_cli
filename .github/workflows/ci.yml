@@ -78,6 +78,7 @@ jobs:
           path: meta_project_cli
 
       - name: Clone dependencies
+        shell: bash
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
@@ -130,6 +131,7 @@ jobs:
           path: meta_project_cli
 
       - name: Clone dependencies
+        shell: bash
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
