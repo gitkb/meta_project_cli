@@ -264,12 +264,14 @@ fn execute_command_recursive(
     let mut all_missing: Vec<(String, String)> = Vec::new();
 
     // Check the root meta config first
+    // A config that is refused is an error, not "nothing missing"
     if let Some((root_meta_path, _format)) = config::find_meta_config_in(cwd) {
-        if let Ok(projects) = parse_meta_projects(&root_meta_path) {
-            let missing = find_missing_projects(&projects, cwd);
-            for (name, url) in missing {
-                all_missing.push((name, url));
-            }
+        let projects = match parse_meta_projects(&root_meta_path) {
+            Ok(projects) => projects,
+            Err(e) => return CommandResult::Error(format!("{e:#}")),
+        };
+        for (name, url) in find_missing_projects(&projects, cwd) {
+            all_missing.push((name, url));
         }
     }
 
@@ -277,13 +279,14 @@ fn execute_command_recursive(
     for project_path in provided_projects {
         let project_dir = cwd.join(project_path);
         if let Some((nested_meta_path, _format)) = config::find_meta_config_in(&project_dir) {
-            if let Ok(projects) = parse_meta_projects(&nested_meta_path) {
-                let missing = find_missing_projects(&projects, &project_dir);
-                for (name, url) in missing {
-                    // Use the full path relative to cwd
-                    let full_path = format!("{project_path}/{name}");
-                    all_missing.push((full_path, url));
-                }
+            let projects = match parse_meta_projects(&nested_meta_path) {
+                Ok(projects) => projects,
+                Err(e) => return CommandResult::Error(format!("{e:#}")),
+            };
+            for (name, url) in find_missing_projects(&projects, &project_dir) {
+                // Use the full path relative to cwd
+                let full_path = format!("{project_path}/{name}");
+                all_missing.push((full_path, url));
             }
         }
     }
