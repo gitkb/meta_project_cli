@@ -3,7 +3,7 @@
 //! Provides project management commands for meta repositories.
 
 use meta_cli::config::{self, MetaTreeNode, ProjectInfo};
-use meta_cli::display::escape;
+use meta_cli::display::{escape, escape_path};
 use meta_cli::worktree;
 use serde::Serialize;
 use std::borrow::Cow;
@@ -125,7 +125,7 @@ pub fn execute_command(
 
     // Fall back to reading the local meta config
     let Some((meta_path, _format)) = config::find_meta_config_in(cwd) else {
-        return CommandResult::Error(format!("No .meta config found in {}", cwd.display()));
+        return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)));
     };
     let projects = match parse_meta_projects(&meta_path) {
         Ok(projects) => projects,
@@ -336,7 +336,10 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
                 config::find_root_meta_dir(&nearest_meta_dir)
             }
             None => {
-                return CommandResult::Error(format!("No .meta config found in {}", cwd.display()))
+                return CommandResult::Error(format!(
+                    "No .meta config found in {}",
+                    escape_path(cwd)
+                ))
             }
         }
     } else {
@@ -553,7 +556,7 @@ fn handle_project_dependents(
 
     // Find the root meta config
     let Some((nearest_meta_path, _)) = config::find_meta_config(cwd, None) else {
-        return CommandResult::Error(format!("No .meta config found in {}", cwd.display()));
+        return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)));
     };
     let nearest_meta_dir = nearest_meta_path.parent().unwrap_or(Path::new("."));
     let start_dir = if options.recursive {
@@ -563,7 +566,10 @@ fn handle_project_dependents(
     };
 
     let Some((meta_path, _format)) = config::find_meta_config_in(&start_dir) else {
-        return CommandResult::Error(format!("No .meta config found in {}", start_dir.display()));
+        return CommandResult::Error(format!(
+            "No .meta config found in {}",
+            escape_path(&start_dir)
+        ));
     };
 
     let (all_projects, _ignore) = match config::parse_meta_config(&meta_path) {
