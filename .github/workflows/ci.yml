@@ -27,12 +27,19 @@ jobs:
 
       - name: Clone dependencies
         shell: bash
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
-          git clone --depth 1 https://github.com/gitkb/meta_plugin_protocol.git
-          git clone --depth 1 https://github.com/gitkb/meta_cli.git
-          git clone --depth 1 https://github.com/gitkb/meta_core.git
-          git clone --depth 1 https://github.com/gitkb/meta_git_lib.git
-          git clone --depth 1 https://github.com/gitkb/loop_lib.git
+          for repo in meta_plugin_protocol meta_cli meta_core meta_git_lib loop_lib; do
+            if git clone --depth 1 -b "$BRANCH" "https://github.com/gitkb/${repo}.git" 2>/dev/null; then
+              echo "Cloned ${repo}@${BRANCH}"
+            elif git clone --depth 1 "https://github.com/gitkb/${repo}.git"; then
+              echo "Branch ${BRANCH} not found for ${repo}; falling back to default branch"
+            else
+              echo "::error::Failed to clone ${repo}"
+              exit 1
+            fi
+          done
 
       - name: Create workspace Cargo.toml
         shell: bash
@@ -71,12 +78,19 @@ jobs:
           path: meta_project_cli
 
       - name: Clone dependencies
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
-          git clone --depth 1 https://github.com/gitkb/meta_plugin_protocol.git
-          git clone --depth 1 https://github.com/gitkb/meta_cli.git
-          git clone --depth 1 https://github.com/gitkb/meta_core.git
-          git clone --depth 1 https://github.com/gitkb/meta_git_lib.git
-          git clone --depth 1 https://github.com/gitkb/loop_lib.git
+          for repo in meta_plugin_protocol meta_cli meta_core meta_git_lib loop_lib; do
+            if git clone --depth 1 -b "$BRANCH" "https://github.com/gitkb/${repo}.git" 2>/dev/null; then
+              echo "Cloned ${repo}@${BRANCH}"
+            elif git clone --depth 1 "https://github.com/gitkb/${repo}.git"; then
+              echo "Branch ${BRANCH} not found for ${repo}; falling back to default branch"
+            else
+              echo "::error::Failed to clone ${repo}"
+              exit 1
+            fi
+          done
 
       - name: Create workspace Cargo.toml
         run: |
@@ -116,12 +130,19 @@ jobs:
           path: meta_project_cli
 
       - name: Clone dependencies
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
-          git clone --depth 1 https://github.com/gitkb/meta_plugin_protocol.git
-          git clone --depth 1 https://github.com/gitkb/meta_cli.git
-          git clone --depth 1 https://github.com/gitkb/meta_core.git
-          git clone --depth 1 https://github.com/gitkb/meta_git_lib.git
-          git clone --depth 1 https://github.com/gitkb/loop_lib.git
+          for repo in meta_plugin_protocol meta_cli meta_core meta_git_lib loop_lib; do
+            if git clone --depth 1 -b "$BRANCH" "https://github.com/gitkb/${repo}.git" 2>/dev/null; then
+              echo "Cloned ${repo}@${BRANCH}"
+            elif git clone --depth 1 "https://github.com/gitkb/${repo}.git"; then
+              echo "Branch ${BRANCH} not found for ${repo}; falling back to default branch"
+            else
+              echo "::error::Failed to clone ${repo}"
+              exit 1
+            fi
+          done
 
       - name: Create workspace Cargo.toml
         run: |

@@ -83,6 +83,17 @@ pub fn execute_command(
         return project_command_help(command);
     }
 
+    // meta_cli sends an unclaimed `project <word>` as `project` plus args
+    if command == "project" {
+        let typed: Vec<&str> = std::iter::once(command)
+            .chain(args.iter().map(String::as_str))
+            .collect();
+        return CommandResult::ShowHelp(Some(format!(
+            "unrecognized command '{}'. Use 'meta git update' to sync projects.",
+            typed.join(" ")
+        )));
+    }
+
     // project dependents reads the dependency graph directly
     if command == "project dependents" {
         return handle_project_dependents(args, options, cwd);
@@ -139,10 +150,15 @@ pub fn execute_command(
     }
 }
 
+/// A `--help`/`-h` before `--`; after it, they are arguments for the command.
 fn has_help_token(command: &str, args: &[String]) -> bool {
     command
         .split_whitespace()
-        .chain(args.iter().map(String::as_str))
+        .chain(
+            args.iter()
+                .map(String::as_str)
+                .take_while(|arg| *arg != "--"),
+        )
         .any(|arg| arg == "--help" || arg == "-h")
 }
 
@@ -712,10 +728,13 @@ mod tests {
         std::fs::write(temp_dir.path().join(".meta"), r#"{"projects": {}}"#).unwrap();
 
         let options = ExecuteOptions::default();
-        let result = execute_command("project unknown", &[], &options, &[], temp_dir.path());
+        let args = ["unknown".to_string()];
+        let result = execute_command("project", &args, &options, &[], temp_dir.path());
 
         match result {
-            CommandResult::ShowHelp(Some(msg)) => assert!(msg.contains("unrecognized command")),
+            CommandResult::ShowHelp(Some(msg)) => {
+                assert!(msg.contains("unrecognized command 'project unknown'"))
+            }
             _ => panic!("Expected ShowHelp result"),
         }
     }
@@ -772,7 +791,9 @@ mod tests {
     fn test_execution_plan_serialization() {
         let commands = vec![PlannedCommand {
             dir: ".".to_string(),
-            cmd: "git clone https://example.com/repo.git repo".to_string(),
+            argv: ["git", "clone", "https://example.com/repo.git", "repo"]
+                .map(str::to_string)
+                .to_vec(),
             env: None,
         }];
         let plan = ExecutionPlan {
@@ -787,7 +808,7 @@ mod tests {
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains("\"plan\""));
         assert!(json.contains("\"commands\""));
-        assert!(json.contains("git clone"));
+        assert!(json.contains(r#""argv":["git","clone""#));
     }
 
     #[test]
