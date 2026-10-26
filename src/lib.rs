@@ -117,9 +117,10 @@ pub fn execute_command(
         return handle_project_list(cwd, &effective_options);
     }
 
-    // If we have provided projects from meta_cli (e.g., when --recursive is used),
-    // we need to check each project directory for missing repos in their .meta files
-    if !provided_projects.is_empty() {
+    // With --recursive, check each project directory meta_cli provided for
+    // missing repos in its own .meta (meta_cli sends the list either way;
+    // without --recursive only the root config counts)
+    if options.recursive && !provided_projects.is_empty() {
         return execute_command_recursive(command, options, provided_projects, cwd);
     }
 
