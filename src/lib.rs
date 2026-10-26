@@ -124,7 +124,11 @@ pub fn execute_command(
     }
 
     // Fall back to reading the local meta config
-    let Some((meta_path, _format)) = config::find_meta_config_in(cwd) else {
+    let found = match config::find_meta_config_in(cwd) {
+        Ok(found) => found,
+        Err(e) => return CommandResult::Error(format!("{e:#}")),
+    };
+    let Some((meta_path, _format)) = found else {
         return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)));
     };
     let projects = match parse_meta_projects(&meta_path) {
@@ -265,7 +269,11 @@ fn execute_command_recursive(
 
     // Check the root meta config first
     // A config that is refused is an error, not "nothing missing"
-    if let Some((root_meta_path, _format)) = config::find_meta_config_in(cwd) {
+    let root = match config::find_meta_config_in(cwd) {
+        Ok(found) => found,
+        Err(e) => return CommandResult::Error(format!("{e:#}")),
+    };
+    if let Some((root_meta_path, _format)) = root {
         let projects = match parse_meta_projects(&root_meta_path) {
             Ok(projects) => projects,
             Err(e) => return CommandResult::Error(format!("{e:#}")),
@@ -278,7 +286,12 @@ fn execute_command_recursive(
     // Check each provided project directory for its own meta config
     for project_path in provided_projects {
         let project_dir = cwd.join(project_path);
-        if let Some((nested_meta_path, _format)) = config::find_meta_config_in(&project_dir) {
+        // One that can't be examined is an error, not "nothing missing"
+        let nested = match config::find_meta_config_in(&project_dir) {
+            Ok(found) => found,
+            Err(e) => return CommandResult::Error(format!("{e:#}")),
+        };
+        if let Some((nested_meta_path, _format)) = nested {
             let projects = match parse_meta_projects(&nested_meta_path) {
                 Ok(projects) => projects,
                 Err(e) => return CommandResult::Error(format!("{e:#}")),
@@ -565,7 +578,11 @@ fn handle_project_dependents(
         nearest_meta_dir.to_path_buf()
     };
 
-    let Some((meta_path, _format)) = config::find_meta_config_in(&start_dir) else {
+    let found = match config::find_meta_config_in(&start_dir) {
+        Ok(found) => found,
+        Err(e) => return CommandResult::Error(format!("{e:#}")),
+    };
+    let Some((meta_path, _format)) = found else {
         return CommandResult::Error(format!(
             "No .meta config found in {}",
             escape_path(&start_dir)
