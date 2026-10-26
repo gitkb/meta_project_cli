@@ -124,19 +124,17 @@ pub fn execute_command(
         return execute_command_recursive(command, options, provided_projects, cwd);
     }
 
-    // Fall back to reading the local meta config
-    let found = match config::find_meta_config_in(cwd) {
-        Ok(found) => found,
-        Err(e) => return CommandResult::Error(format!("{e:#}")),
-    };
-    let Some((meta_path, _format)) = found else {
+    // The workspace's own config: the nearest one at or above cwd, as meta
+    // finds it (a config it can't read is returned, and reading it fails)
+    let Some((meta_path, _format)) = config::find_meta_config(cwd, None) else {
         return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)));
     };
     let projects = match parse_meta_projects(&meta_path) {
         Ok(projects) => projects,
-        Err(e) => return CommandResult::Error(format!("Failed to parse meta config: {e}")),
+        Err(e) => return CommandResult::Error(format!("Failed to parse meta config: {e:#}")),
     };
-    let missing = find_missing_projects(&projects, cwd);
+    let root = meta_path.parent().unwrap_or(cwd);
+    let missing = find_missing_projects(&projects, root);
 
     match command {
         "project check" => {
@@ -144,7 +142,7 @@ pub fn execute_command(
                 CommandResult::Message("All projects are cloned and present.".to_string())
             } else {
                 // Print missing repos (uses visual formatting)
-                print_missing(&missing, cwd);
+                print_missing(&missing, root);
                 CommandResult::Message(format!(
                     "{} project(s) missing. Run 'meta git update' to clone them.",
                     missing.len()
