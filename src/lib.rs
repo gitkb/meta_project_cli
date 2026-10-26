@@ -3,8 +3,10 @@
 //! Provides project management commands for meta repositories.
 
 use meta_cli::config::{self, MetaTreeNode, ProjectInfo};
+use meta_cli::display::{escape, escape_path};
 use meta_cli::worktree;
 use serde::Serialize;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Command;
@@ -115,21 +117,24 @@ pub fn execute_command(
         return handle_project_list(cwd, &effective_options);
     }
 
-    // If we have provided projects from meta_cli (e.g., when --recursive is used),
-    // we need to check each project directory for missing repos in their .meta files
-    if !provided_projects.is_empty() {
+    // With --recursive, check each project directory meta_cli provided for
+    // missing repos in its own .meta (meta_cli sends the list either way;
+    // without --recursive only the root config counts)
+    if options.recursive && !provided_projects.is_empty() {
         return execute_command_recursive(command, options, provided_projects, cwd);
     }
 
-    // Fall back to reading the local meta config
-    let Some((meta_path, _format)) = config::find_meta_config_in(cwd) else {
-        return CommandResult::Error(format!("No .meta config found in {}", cwd.display()));
+    // The workspace's own config: the nearest one at or above cwd, as meta
+    // finds it (a config it can't read is returned, and reading it fails)
+    let Some((meta_path, _format)) = config::find_meta_config(cwd, None) else {
+        return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)));
     };
     let projects = match parse_meta_projects(&meta_path) {
         Ok(projects) => projects,
-        Err(e) => return CommandResult::Error(format!("Failed to parse meta config: {e}")),
+        Err(e) => return CommandResult::Error(format!("Failed to parse meta config: {e:#}")),
     };
-    let missing = find_missing_projects(&projects, cwd);
+    let root = meta_path.parent().unwrap_or(cwd);
+    let missing = find_missing_projects(&projects, root);
 
     match command {
         "project check" => {
@@ -137,7 +142,7 @@ pub fn execute_command(
                 CommandResult::Message("All projects are cloned and present.".to_string())
             } else {
                 // Print missing repos (uses visual formatting)
-                print_missing(&missing, cwd);
+                print_missing(&missing, root);
                 CommandResult::Message(format!(
                     "{} project(s) missing. Run 'meta git update' to clone them.",
                     missing.len()
@@ -262,26 +267,38 @@ fn execute_command_recursive(
     let mut all_missing: Vec<(String, String)> = Vec::new();
 
     // Check the root meta config first
-    if let Some((root_meta_path, _format)) = config::find_meta_config_in(cwd) {
-        if let Ok(projects) = parse_meta_projects(&root_meta_path) {
-            let missing = find_missing_projects(&projects, cwd);
-            for (name, url) in missing {
-                all_missing.push((name, url));
-            }
+    // A config that is refused is an error, not "nothing missing"
+    let root = match config::find_meta_config_in(cwd) {
+        Ok(found) => found,
+        Err(e) => return CommandResult::Error(format!("{e:#}")),
+    };
+    if let Some((root_meta_path, _format)) = root {
+        let projects = match parse_meta_projects(&root_meta_path) {
+            Ok(projects) => projects,
+            Err(e) => return CommandResult::Error(format!("{e:#}")),
+        };
+        for (name, url) in find_missing_projects(&projects, cwd) {
+            all_missing.push((name, url));
         }
     }
 
     // Check each provided project directory for its own meta config
     for project_path in provided_projects {
         let project_dir = cwd.join(project_path);
-        if let Some((nested_meta_path, _format)) = config::find_meta_config_in(&project_dir) {
-            if let Ok(projects) = parse_meta_projects(&nested_meta_path) {
-                let missing = find_missing_projects(&projects, &project_dir);
-                for (name, url) in missing {
-                    // Use the full path relative to cwd
-                    let full_path = format!("{project_path}/{name}");
-                    all_missing.push((full_path, url));
-                }
+        // One that can't be examined is an error, not "nothing missing"
+        let nested = match config::find_meta_config_in(&project_dir) {
+            Ok(found) => found,
+            Err(e) => return CommandResult::Error(format!("{e:#}")),
+        };
+        if let Some((nested_meta_path, _format)) = nested {
+            let projects = match parse_meta_projects(&nested_meta_path) {
+                Ok(projects) => projects,
+                Err(e) => return CommandResult::Error(format!("{e:#}")),
+            };
+            for (name, url) in find_missing_projects(&projects, &project_dir) {
+                // Use the full path relative to cwd
+                let full_path = format!("{project_path}/{name}");
+                all_missing.push((full_path, url));
             }
         }
     }
@@ -331,7 +348,10 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
                 config::find_root_meta_dir(&nearest_meta_dir)
             }
             None => {
-                return CommandResult::Error(format!("No .meta config found in {}", cwd.display()))
+                return CommandResult::Error(format!(
+                    "No .meta config found in {}",
+                    escape_path(cwd)
+                ))
             }
         }
     } else {
@@ -443,8 +463,9 @@ fn get_git_remote_url(dir: &Path) -> Option<String> {
 }
 
 /// A project's remote URL as shown in `meta project list`.
-fn remote_label(repo: Option<&str>) -> &str {
-    repo.filter(|r| !r.is_empty()).unwrap_or("no remote")
+fn remote_label(repo: Option<&str>) -> Cow<'_, str> {
+    repo.filter(|r| !r.is_empty())
+        .map_or(Cow::Borrowed("no remote"), escape)
 }
 
 /// Format a project tree with box-drawing characters: each project's name, its
@@ -461,20 +482,21 @@ fn format_project_tree(nodes: &[ProjectTreeNode], output: &mut String, prefix: &
         let tags_str = if node.tags.is_empty() {
             String::new()
         } else {
-            format!(" [{}]", node.tags.join(", "))
+            let tags: Vec<_> = node.tags.iter().map(|t| escape(t)).collect();
+            format!(" [{}]", tags.join(", "))
         };
 
         let path_str = if node.path == node.name {
             String::new()
         } else {
-            format!(" \u{2192} {}", node.path)
+            format!(" \u{2192} {}", escape(&node.path))
         };
 
         output.push_str(&format!(
             "{}{}{}{} ({}){}\n",
             prefix,
             connector,
-            node.name,
+            escape(&node.name),
             path_str,
             remote_label(node.repo.as_deref()),
             tags_str
@@ -546,7 +568,7 @@ fn handle_project_dependents(
 
     // Find the root meta config
     let Some((nearest_meta_path, _)) = config::find_meta_config(cwd, None) else {
-        return CommandResult::Error(format!("No .meta config found in {}", cwd.display()));
+        return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)));
     };
     let nearest_meta_dir = nearest_meta_path.parent().unwrap_or(Path::new("."));
     let start_dir = if options.recursive {
@@ -555,8 +577,15 @@ fn handle_project_dependents(
         nearest_meta_dir.to_path_buf()
     };
 
-    let Some((meta_path, _format)) = config::find_meta_config_in(&start_dir) else {
-        return CommandResult::Error(format!("No .meta config found in {}", start_dir.display()));
+    let found = match config::find_meta_config_in(&start_dir) {
+        Ok(found) => found,
+        Err(e) => return CommandResult::Error(format!("{e:#}")),
+    };
+    let Some((meta_path, _format)) = found else {
+        return CommandResult::Error(format!(
+            "No .meta config found in {}",
+            escape_path(&start_dir)
+        ));
     };
 
     let (all_projects, _ignore) = match config::parse_meta_config(&meta_path) {
@@ -565,7 +594,10 @@ fn handle_project_dependents(
     };
 
     let Some(dependents) = find_dependents(&project_name, &all_projects) else {
-        return CommandResult::Error(format!("Unknown project or alias: {project_name}"));
+        return CommandResult::Error(format!(
+            "Unknown project or alias: {}",
+            escape(&project_name)
+        ));
     };
 
     if options.json_output {
@@ -576,9 +608,13 @@ fn handle_project_dependents(
         CommandResult::Message(json)
     } else {
         if dependents.is_empty() {
-            CommandResult::Message(format!("No projects depend on '{project_name}'."))
+            CommandResult::Message(format!(
+                "No projects depend on '{}'.",
+                escape(&project_name)
+            ))
         } else {
-            CommandResult::Message(dependents.join("\n"))
+            let names: Vec<_> = dependents.iter().map(|d| escape(d)).collect();
+            CommandResult::Message(names.join("\n"))
         }
     }
 }
@@ -955,6 +991,25 @@ mod tests {
             output,
             "\u{251c}\u{2500}\u{2500} api \u{2192} services/api (git@github.com:org/api.git) [backend]\n\
              \u{2514}\u{2500}\u{2500} frontend (git@github.com:org/frontend.git)\n"
+        );
+    }
+
+    #[test]
+    fn test_format_project_tree_escapes_control_characters() {
+        let nodes = vec![ProjectTreeNode {
+            name: "x\u{1b}]0;PWNED\u{7}".to_string(),
+            path: "t\u{1b}[1A".to_string(),
+            repo: Some("u\u{9b}2J".to_string()),
+            tags: vec!["n\nfake".to_string()],
+            is_meta: false,
+            projects: vec![],
+        }];
+
+        let mut output = String::new();
+        format_project_tree(&nodes, &mut output, "");
+        assert_eq!(
+            output,
+            "\u{2514}\u{2500}\u{2500} x\\u{1b}]0;PWNED\\u{7} \u{2192} t\\u{1b}[1A (u\\u{9b}2J) [n\\nfake]\n"
         );
     }
 
