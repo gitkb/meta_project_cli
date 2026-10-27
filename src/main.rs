@@ -76,6 +76,8 @@ fn execute_request(request: PluginRequest) -> CommandResult {
         depth: request.options.depth,
         verbose: request.options.verbose,
         parallel: request.options.parallel,
+        filtered: request.options.include_filters.is_some()
+            || request.options.exclude_filters.is_some(),
     };
 
     meta_project_cli::execute_command(

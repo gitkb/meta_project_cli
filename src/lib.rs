@@ -24,6 +24,8 @@ pub struct ExecuteOptions {
     pub depth: Option<usize>,
     pub verbose: bool,
     pub parallel: bool,
+    /// `--include` or `--exclude` was given
+    pub filtered: bool,
 }
 
 // ============================================================================
@@ -103,6 +105,12 @@ pub fn execute_command(
 
     // project list/ls handles its own config discovery
     if command == "project list" || command == "project ls" {
+        // It lists the whole tree, so a filter would be silently ignored
+        if options.filtered {
+            return CommandResult::Error(
+                "meta project list does not take --include/--exclude".to_string(),
+            );
+        }
         // Check if --json was passed as a trailing arg (not extracted by meta_cli
         // because it could be intended for a subcommand in non-plugin contexts)
         let json_from_args = args.iter().any(|a| a == "--json");
