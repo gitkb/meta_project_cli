@@ -94,7 +94,7 @@ pub fn execute_command(
             .collect();
         return CommandResult::ShowHelp(Some(format!(
             "unrecognized command '{}'. Use 'meta git update' to sync projects.",
-            typed.join(" ")
+            escape(&typed.join(" "))
         )));
     }
 
@@ -162,7 +162,8 @@ pub fn execute_command(
             }
         }
         _ => CommandResult::ShowHelp(Some(format!(
-            "unrecognized command '{command}'. Use 'meta git update' to sync projects."
+            "unrecognized command '{}'. Use 'meta git update' to sync projects.",
+            escape(command)
         ))),
     }
 }
@@ -332,7 +333,8 @@ fn execute_command_recursive(
             }
         }
         _ => CommandResult::ShowHelp(Some(format!(
-            "unrecognized command '{command}'. Use 'meta git update' to sync projects."
+            "unrecognized command '{}'. Use 'meta git update' to sync projects.",
+            escape(command)
         ))),
     }
 }
