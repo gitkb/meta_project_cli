@@ -106,7 +106,12 @@ pub fn execute_command(
     // project list/ls handles its own config discovery
     if command == "project list" || command == "project ls" {
         // It lists the whole tree, so a filter would be silently ignored
-        if options.filtered {
+        let trailing_filter = args.iter().any(|a| {
+            ["--include", "--exclude", "-i", "-e"].contains(&a.as_str())
+                || a.starts_with("--include=")
+                || a.starts_with("--exclude=")
+        });
+        if options.filtered || trailing_filter {
             return CommandResult::Error(
                 "meta project list does not take --include/--exclude".to_string(),
             );
