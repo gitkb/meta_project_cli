@@ -107,9 +107,9 @@ pub fn execute_command(
     if command == "project list" || command == "project ls" {
         // It lists the whole tree, so a filter would be silently ignored
         let trailing_filter = args.iter().any(|a| {
-            ["--include", "--exclude", "-i", "-e"].contains(&a.as_str())
-                || a.starts_with("--include=")
-                || a.starts_with("--exclude=")
+            a.starts_with("--include")
+                || a.starts_with("--exclude")
+                || (a.starts_with("-i") || a.starts_with("-e")) && !a.starts_with("--")
         });
         if options.filtered || trailing_filter {
             return CommandResult::Error(
