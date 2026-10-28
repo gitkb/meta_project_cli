@@ -24,6 +24,8 @@ pub struct ExecuteOptions {
     pub depth: Option<usize>,
     pub verbose: bool,
     pub parallel: bool,
+    /// `--include` or `--exclude` was given
+    pub filtered: bool,
 }
 
 // ============================================================================
@@ -92,7 +94,7 @@ pub fn execute_command(
             .collect();
         return CommandResult::ShowHelp(Some(format!(
             "unrecognized command '{}'. Use 'meta git update' to sync projects.",
-            typed.join(" ")
+            escape(&typed.join(" "))
         )));
     }
 
@@ -103,6 +105,17 @@ pub fn execute_command(
 
     // project list/ls handles its own config discovery
     if command == "project list" || command == "project ls" {
+        // It lists the whole tree, so a filter would be silently ignored
+        let trailing_filter = args.iter().any(|a| {
+            a.starts_with("--include")
+                || a.starts_with("--exclude")
+                || (a.starts_with("-i") || a.starts_with("-e")) && !a.starts_with("--")
+        });
+        if options.filtered || trailing_filter {
+            return CommandResult::Error(
+                "meta project list does not take --include/--exclude".to_string(),
+            );
+        }
         // Check if --json was passed as a trailing arg (not extracted by meta_cli
         // because it could be intended for a subcommand in non-plugin contexts)
         let json_from_args = args.iter().any(|a| a == "--json");
@@ -125,9 +138,13 @@ pub fn execute_command(
     }
 
     // The workspace's own config: the nearest one at or above cwd, as meta
-    // finds it (a config it can't read is returned, and reading it fails)
-    let Some((meta_path, _format)) = config::find_meta_config(cwd, None) else {
-        return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)));
+    // finds it (ambiguity and unreadable configs are errors)
+    let meta_path = match config::find_meta_config(cwd, None) {
+        Ok(Some((path, _))) => path,
+        Ok(None) => {
+            return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)))
+        }
+        Err(e) => return CommandResult::Error(format!("{e:#}")),
     };
     let projects = match parse_meta_projects(&meta_path) {
         Ok(projects) => projects,
@@ -150,7 +167,8 @@ pub fn execute_command(
             }
         }
         _ => CommandResult::ShowHelp(Some(format!(
-            "unrecognized command '{command}'. Use 'meta git update' to sync projects."
+            "unrecognized command '{}'. Use 'meta git update' to sync projects.",
+            escape(command)
         ))),
     }
 }
@@ -320,7 +338,8 @@ fn execute_command_recursive(
             }
         }
         _ => CommandResult::ShowHelp(Some(format!(
-            "unrecognized command '{command}'. Use 'meta git update' to sync projects."
+            "unrecognized command '{}'. Use 'meta git update' to sync projects.",
+            escape(command)
         ))),
     }
 }
@@ -340,14 +359,18 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
     // When recursive, walk up to the root ancestor meta-repo
     let start_dir = if options.recursive {
         match config::find_meta_config(cwd, None) {
-            Some((config_path, _)) => {
+            Ok(Some((config_path, _))) => {
                 let nearest_meta_dir = config_path
                     .parent()
                     .unwrap_or(std::path::Path::new("."))
                     .to_path_buf();
-                config::find_root_meta_dir(&nearest_meta_dir)
+                match config::find_root_meta_dir(&nearest_meta_dir) {
+                    Ok(root) => root,
+                    Err(e) => return CommandResult::Error(format!("{e:#}")),
+                }
             }
-            None => {
+            Err(e) => return CommandResult::Error(format!("{e:#}")),
+            Ok(None) => {
                 return CommandResult::Error(format!(
                     "No .meta config found in {}",
                     escape_path(cwd)
@@ -380,8 +403,9 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
             start_dir.clone()
         } else {
             match config::find_meta_config(cwd, None) {
-                Some((config_path, _)) => config_path.parent().unwrap_or(cwd).to_path_buf(),
-                None => start_dir.clone(),
+                Ok(Some((config_path, _))) => config_path.parent().unwrap_or(cwd).to_path_buf(),
+                Ok(None) => start_dir.clone(),
+                Err(e) => return CommandResult::Error(format!("{e:#}")),
             }
         };
         let abs_root = root_dir
@@ -567,12 +591,19 @@ fn handle_project_dependents(
     };
 
     // Find the root meta config
-    let Some((nearest_meta_path, _)) = config::find_meta_config(cwd, None) else {
-        return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)));
+    let nearest_meta_path = match config::find_meta_config(cwd, None) {
+        Ok(Some((path, _))) => path,
+        Ok(None) => {
+            return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)))
+        }
+        Err(e) => return CommandResult::Error(format!("{e:#}")),
     };
     let nearest_meta_dir = nearest_meta_path.parent().unwrap_or(Path::new("."));
     let start_dir = if options.recursive {
-        config::find_root_meta_dir(nearest_meta_dir)
+        match config::find_root_meta_dir(nearest_meta_dir) {
+            Ok(root) => root,
+            Err(e) => return CommandResult::Error(format!("{e:#}")),
+        }
     } else {
         nearest_meta_dir.to_path_buf()
     };
