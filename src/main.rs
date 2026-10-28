@@ -11,7 +11,7 @@ fn main() {
     let mut help_commands = IndexMap::new();
     help_commands.insert(
         "list".to_string(),
-        "List all projects defined in .meta (alias: ls)".to_string(),
+        "List all projects defined in .meta.yaml (alias: ls)".to_string(),
     );
     help_commands.insert(
         "check".to_string(),

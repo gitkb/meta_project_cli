@@ -74,7 +74,7 @@ pub struct ProjectListWorktree {
 
 /// Execute a project command and return the result
 ///
-/// If `provided_projects` is not empty, it will be used instead of reading from .meta file.
+/// If `provided_projects` is not empty, it will be used instead of reading from .meta.yaml file.
 /// This allows meta_cli to pass in the full project list when --recursive is used.
 pub fn execute_command(
     command: &str,
@@ -131,18 +131,18 @@ pub fn execute_command(
     }
 
     // With --recursive, check each project directory meta_cli provided for
-    // missing repos in its own .meta (meta_cli sends the list either way;
+    // missing repos in its own .meta.yaml (meta_cli sends the list either way;
     // without --recursive only the root config counts)
     if options.recursive && !provided_projects.is_empty() {
         return execute_command_recursive(command, options, provided_projects, cwd);
     }
 
     // The workspace's own config: the nearest one at or above cwd, as meta
-    // finds it (ambiguity and unreadable configs are errors)
+    // finds it (an unreadable config is an error)
     let meta_path = match config::find_meta_config(cwd, None) {
-        Ok(Some((path, _))) => path,
+        Ok(Some(path)) => path,
         Ok(None) => {
-            return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)))
+            return CommandResult::Error(format!("No .meta.yaml found in {}", escape_path(cwd)))
         }
         Err(e) => return CommandResult::Error(format!("{e:#}")),
     };
@@ -254,7 +254,7 @@ Examples:
 Usage: meta project <COMMAND>
 
 Commands:
-  list          List projects defined in .meta (alias: ls)
+  list          List projects defined in .meta.yaml (alias: ls)
   check         Verify configured projects are cloned
   dependents    List projects that depend on a project or capability
 
@@ -275,7 +275,7 @@ Examples:
 /// Execute a project command recursively across provided project directories
 ///
 /// This handles the case when --recursive is used. Each project directory may have
-/// its own .meta file with additional projects to check/sync.
+/// its own .meta.yaml file with additional projects to check/sync.
 fn execute_command_recursive(
     command: &str,
     _options: &ExecuteOptions,
@@ -290,7 +290,7 @@ fn execute_command_recursive(
         Ok(found) => found,
         Err(e) => return CommandResult::Error(format!("{e:#}")),
     };
-    if let Some((root_meta_path, _format)) = root {
+    if let Some(root_meta_path) = root {
         let projects = match parse_meta_projects(&root_meta_path) {
             Ok(projects) => projects,
             Err(e) => return CommandResult::Error(format!("{e:#}")),
@@ -308,7 +308,7 @@ fn execute_command_recursive(
             Ok(found) => found,
             Err(e) => return CommandResult::Error(format!("{e:#}")),
         };
-        if let Some((nested_meta_path, _format)) = nested {
+        if let Some(nested_meta_path) = nested {
             let projects = match parse_meta_projects(&nested_meta_path) {
                 Ok(projects) => projects,
                 Err(e) => return CommandResult::Error(format!("{e:#}")),
@@ -359,7 +359,7 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
     // When recursive, walk up to the root ancestor meta-repo
     let start_dir = if options.recursive {
         match config::find_meta_config(cwd, None) {
-            Ok(Some((config_path, _))) => {
+            Ok(Some(config_path)) => {
                 let nearest_meta_dir = config_path
                     .parent()
                     .unwrap_or(std::path::Path::new("."))
@@ -371,10 +371,7 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
             }
             Err(e) => return CommandResult::Error(format!("{e:#}")),
             Ok(None) => {
-                return CommandResult::Error(format!(
-                    "No .meta config found in {}",
-                    escape_path(cwd)
-                ))
+                return CommandResult::Error(format!("No .meta.yaml found in {}", escape_path(cwd)))
             }
         }
     } else {
@@ -395,15 +392,15 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
     let abs_cwd_string = abs_cwd.to_string_lossy().to_string();
 
     if options.json_output {
-        // `root` = the .meta config directory relevant to this invocation:
+        // `root` = the .meta.yaml directory relevant to this invocation:
         //   - recursive: the outermost workspace root (same as start_dir)
-        //   - non-recursive: the nearest ancestor .meta config dir
+        //   - non-recursive: the nearest ancestor .meta.yaml dir
         // In both cases start_dir is wrong for non-recursive (it equals cwd).
         let root_dir = if options.recursive {
             start_dir.clone()
         } else {
             match config::find_meta_config(cwd, None) {
-                Ok(Some((config_path, _))) => config_path.parent().unwrap_or(cwd).to_path_buf(),
+                Ok(Some(config_path)) => config_path.parent().unwrap_or(cwd).to_path_buf(),
                 Ok(None) => start_dir.clone(),
                 Err(e) => return CommandResult::Error(format!("{e:#}")),
             }
@@ -592,9 +589,9 @@ fn handle_project_dependents(
 
     // Find the root meta config
     let nearest_meta_path = match config::find_meta_config(cwd, None) {
-        Ok(Some((path, _))) => path,
+        Ok(Some(path)) => path,
         Ok(None) => {
-            return CommandResult::Error(format!("No .meta config found in {}", escape_path(cwd)))
+            return CommandResult::Error(format!("No .meta.yaml found in {}", escape_path(cwd)))
         }
         Err(e) => return CommandResult::Error(format!("{e:#}")),
     };
@@ -612,9 +609,9 @@ fn handle_project_dependents(
         Ok(found) => found,
         Err(e) => return CommandResult::Error(format!("{e:#}")),
     };
-    let Some((meta_path, _format)) = found else {
+    let Some(meta_path) = found else {
         return CommandResult::Error(format!(
-            "No .meta config found in {}",
+            "No .meta.yaml found in {}",
             escape_path(&start_dir)
         ));
     };
@@ -712,8 +709,8 @@ pub fn get_help_text() -> &'static str {
     r#"meta project - Project Inspection Plugin
 
 Commands:
-  meta project list         List all projects defined in .meta (alias: ls)
-  meta project check        Check if all projects in .meta are cloned locally
+  meta project list         List all projects defined in .meta.yaml (alias: ls)
+  meta project check        Check if all projects in .meta.yaml are cloned locally
   meta project dependents   List projects that depend on a given project
 
 Options for list:
@@ -782,7 +779,7 @@ mod tests {
         let result = execute_command("project check", &[], &options, &[], temp_dir.path());
 
         match result {
-            CommandResult::Error(msg) => assert!(msg.contains("No .meta config")),
+            CommandResult::Error(msg) => assert!(msg.contains("No .meta.yaml")),
             _ => panic!("Expected Error result"),
         }
     }
@@ -791,8 +788,8 @@ mod tests {
     fn test_unknown_command() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Create a .meta file
-        std::fs::write(temp_dir.path().join(".meta"), r#"{"projects": {}}"#).unwrap();
+        // Create a .meta.yaml file
+        std::fs::write(temp_dir.path().join(".meta.yaml"), r#"{"projects": {}}"#).unwrap();
 
         let options = ExecuteOptions::default();
         let args = ["unknown".to_string()];
@@ -810,8 +807,8 @@ mod tests {
     fn test_project_check_all_present() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Create a .meta file with no projects
-        std::fs::write(temp_dir.path().join(".meta"), r#"{"projects": {}}"#).unwrap();
+        // Create a .meta.yaml file with no projects
+        std::fs::write(temp_dir.path().join(".meta.yaml"), r#"{"projects": {}}"#).unwrap();
 
         let options = ExecuteOptions::default();
         let result = execute_command("project check", &[], &options, &[], temp_dir.path());
@@ -826,9 +823,9 @@ mod tests {
     fn test_project_sync_removed() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Create a .meta file
+        // Create a .meta.yaml file
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"missing-repo": "https://github.com/test/repo.git"}}"#,
         )
         .unwrap();
@@ -882,9 +879,9 @@ mod tests {
     fn test_project_list_basic() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Create a .meta file with projects
+        // Create a .meta.yaml file with projects
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"repo1": "git@github.com:org/repo1.git", "repo2": "git@github.com:org/repo2.git"}}"#,
         )
         .unwrap();
@@ -907,7 +904,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"repo1": "git@github.com:org/repo1.git"}}"#,
         )
         .unwrap();
@@ -937,7 +934,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"repo1": "git@github.com:org/repo1.git"}}"#,
         )
         .unwrap();
@@ -957,18 +954,18 @@ mod tests {
     fn test_project_list_recursive() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Create root .meta
+        // Create root .meta.yaml
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"child": "git@github.com:org/child.git"}}"#,
         )
         .unwrap();
 
-        // Create child directory with its own .meta
+        // Create child directory with its own .meta.yaml
         let child_dir = temp_dir.path().join("child");
         std::fs::create_dir(&child_dir).unwrap();
         std::fs::write(
-            child_dir.join(".meta"),
+            child_dir.join(".meta.yaml"),
             r#"{"projects": {"grandchild": "git@github.com:org/grandchild.git"}}"#,
         )
         .unwrap();
@@ -1065,7 +1062,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"repo1": "git@github.com:org/repo1.git"}}"#,
         )
         .unwrap();
@@ -1104,7 +1101,7 @@ mod tests {
     fn test_project_list_json_includes_linked_worktree_context() {
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"repo1": "git@github.com:org/repo1.git"}}"#,
         )
         .unwrap();
@@ -1126,7 +1123,7 @@ mod tests {
         git(&["config", "user.email", "test@example.com"]);
         git(&["config", "user.name", "Test"]);
         git(&["remote", "add", "origin", "git@github.com:org/root.git"]);
-        git(&["add", ".meta"]);
+        git(&["add", ".meta.yaml"]);
         git(&["commit", "-q", "-m", "initial meta config"]);
 
         let worktrees = temp_dir.path().join(".worktrees");
@@ -1186,16 +1183,16 @@ mod tests {
         let child = temp_dir.path().join("child");
         std::fs::create_dir_all(&child).unwrap();
 
-        // Root .meta
+        // Root .meta.yaml
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"child": {"repo": "git@github.com:org/child.git", "meta": true}}}"#,
         )
         .unwrap();
 
-        // Child .meta
+        // Child .meta.yaml
         std::fs::write(
-            child.join(".meta"),
+            child.join(".meta.yaml"),
             r#"{"projects": {"repo1": "git@github.com:org/repo1.git"}}"#,
         )
         .unwrap();
@@ -1240,16 +1237,16 @@ mod tests {
         let grandchild = child.join("grandchild");
         std::fs::create_dir_all(&grandchild).unwrap();
 
-        // Root .meta
+        // Root .meta.yaml
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"child": {"repo": "git@github.com:org/child.git", "meta": true}}}"#,
         )
         .unwrap();
 
-        // Child .meta
+        // Child .meta.yaml
         std::fs::write(
-            child.join(".meta"),
+            child.join(".meta.yaml"),
             r#"{"projects": {"grandchild": "git@github.com:org/grandchild.git"}}"#,
         )
         .unwrap();
@@ -1286,16 +1283,16 @@ mod tests {
         let grandchild = child.join("grandchild");
         std::fs::create_dir_all(&grandchild).unwrap();
 
-        // Root .meta
+        // Root .meta.yaml
         std::fs::write(
-            temp_dir.path().join(".meta"),
+            temp_dir.path().join(".meta.yaml"),
             r#"{"projects": {"child": {"repo": "git@github.com:org/child.git", "meta": true}}}"#,
         )
         .unwrap();
 
-        // Child .meta
+        // Child .meta.yaml
         std::fs::write(
-            child.join(".meta"),
+            child.join(".meta.yaml"),
             r#"{"projects": {"grandchild": "git@github.com:org/grandchild.git"}}"#,
         )
         .unwrap();
@@ -1454,7 +1451,7 @@ projects:
 
     #[test]
     fn test_project_dependents_from_subdirectory() {
-        // T8: running from a subdirectory should climb to the nearest .meta ancestor
+        // T8: running from a subdirectory should climb to the nearest .meta.yaml ancestor
         let temp_dir = TempDir::new().unwrap();
         std::fs::write(
             temp_dir.path().join(".meta.yaml"),
