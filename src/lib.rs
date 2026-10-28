@@ -138,7 +138,7 @@ pub fn execute_command(
     }
 
     // The workspace's own config: the nearest one at or above cwd, as meta
-    // finds it (ambiguity and unreadable configs are errors)
+    // finds it (an unreadable config is an error)
     let meta_path = match config::find_meta_config(cwd, None) {
         Ok(Some(path)) => path,
         Ok(None) => {
