@@ -36,9 +36,10 @@ pub struct ExecuteOptions {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectTreeNode {
     pub name: String,
-    /// With `--recursive`, the project's path from the workspace root: the
-    /// key `meta_core::config::build_project_map` gives it, which the
-    /// recursive project graph and `meta git worktree list` use.
+    /// The project's path from this listing's `root` (with `--recursive`, the
+    /// outermost workspace): the key `meta_core::config::build_project_map`
+    /// gives it, which the recursive project graph and `meta git worktree
+    /// list` use.
     pub alias: String,
     pub path: String,
     /// Git remote URL. Should be present for all normal projects.
@@ -1013,6 +1014,21 @@ mod tests {
                 assert_eq!(parsed["alias"], ".");
                 assert_eq!(projects[0]["alias"], "child");
                 assert_eq!(sub_projects[0]["alias"], "child/libs/gc");
+            }
+            _ => panic!("Expected Message result"),
+        }
+
+        // Without --recursive, inside `child`, the listing's root is `child`
+        // and aliases are paths from there
+        let options = ExecuteOptions {
+            json_output: true,
+            ..Default::default()
+        };
+        match execute_command("project list", &[], &options, &[], &child_dir) {
+            CommandResult::Message(msg) => {
+                let parsed: serde_json::Value = serde_json::from_str(&msg).unwrap();
+                assert_eq!(parsed["alias"], ".");
+                assert_eq!(parsed["projects"][0]["alias"], "libs/gc");
             }
             _ => panic!("Expected Message result"),
         }
