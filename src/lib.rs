@@ -36,6 +36,10 @@ pub struct ExecuteOptions {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectTreeNode {
     pub name: String,
+    /// The project's path from the workspace root: how `--recursive`
+    /// commands (`meta git worktree create --recursive --repo`) and
+    /// `meta git worktree list` name it.
+    pub alias: String,
     pub path: String,
     /// Git remote URL. Should be present for all normal projects.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,6 +55,8 @@ pub struct ProjectTreeNode {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectListOutput {
     pub path: String,
+    /// The root's alias, `.`, as `--repo` takes it.
+    pub alias: String,
     pub repo: String,
     pub root: String,
     pub cwd: String,
@@ -384,7 +390,10 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
     };
 
     let root_repo = get_git_remote_url(&start_dir).unwrap_or_default();
-    let project_nodes: Vec<ProjectTreeNode> = tree.iter().map(to_project_tree_node).collect();
+    let project_nodes: Vec<ProjectTreeNode> = tree
+        .iter()
+        .map(|node| to_project_tree_node(node, ""))
+        .collect();
     let abs_cwd = cwd
         .canonicalize()
         .unwrap_or_else(|_| cwd.to_path_buf())
@@ -435,6 +444,7 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
             .unwrap_or(abs_root);
         let output = ProjectListOutput {
             path: ".".to_string(),
+            alias: ".".to_string(),
             repo: root_repo,
             root: abs_root,
             cwd: abs_cwd_string,
@@ -457,14 +467,25 @@ fn handle_project_list(cwd: &Path, options: &ExecuteOptions) -> CommandResult {
     }
 }
 
-fn to_project_tree_node(node: &MetaTreeNode) -> ProjectTreeNode {
+fn to_project_tree_node(node: &MetaTreeNode, prefix: &str) -> ProjectTreeNode {
+    // The key meta_core::config::build_project_map gives a nested project
+    let alias = if prefix.is_empty() {
+        node.info.path.clone()
+    } else {
+        format!("{prefix}/{}", node.info.path)
+    };
     ProjectTreeNode {
         name: node.info.name.clone(),
         path: node.info.path.clone(),
         repo: node.info.repo.clone(),
         tags: node.info.tags.clone(),
         is_meta: node.is_meta,
-        projects: node.children.iter().map(to_project_tree_node).collect(),
+        projects: node
+            .children
+            .iter()
+            .map(|child| to_project_tree_node(child, &alias))
+            .collect(),
+        alias,
     }
 }
 
@@ -966,7 +987,7 @@ mod tests {
         std::fs::create_dir(&child_dir).unwrap();
         std::fs::write(
             child_dir.join(".meta.yaml"),
-            r#"{"projects": {"grandchild": "git@github.com:org/grandchild.git"}}"#,
+            r#"{"projects": {"grandchild": {"repo": "git@github.com:org/grandchild.git", "path": "libs/gc"}}}"#,
         )
         .unwrap();
 
@@ -987,6 +1008,11 @@ mod tests {
                 let sub_projects = projects[0]["projects"].as_array().unwrap();
                 assert_eq!(sub_projects.len(), 1);
                 assert_eq!(sub_projects[0]["name"], "grandchild");
+                // Each alias is the path from the root that --recursive takes,
+                // here for a project cloned at a path other than its name
+                assert_eq!(parsed["alias"], ".");
+                assert_eq!(projects[0]["alias"], "child");
+                assert_eq!(sub_projects[0]["alias"], "child/libs/gc");
             }
             _ => panic!("Expected Message result"),
         }
@@ -997,6 +1023,7 @@ mod tests {
         let nodes = vec![
             ProjectTreeNode {
                 name: "api".to_string(),
+                alias: "services/api".to_string(),
                 path: "services/api".to_string(),
                 repo: Some("git@github.com:org/api.git".to_string()),
                 tags: vec!["backend".to_string()],
@@ -1005,6 +1032,7 @@ mod tests {
             },
             ProjectTreeNode {
                 name: "frontend".to_string(),
+                alias: "frontend".to_string(),
                 path: "frontend".to_string(),
                 repo: Some("git@github.com:org/frontend.git".to_string()),
                 tags: vec![],
@@ -1026,6 +1054,7 @@ mod tests {
     fn test_format_project_tree_escapes_control_characters() {
         let nodes = vec![ProjectTreeNode {
             name: "x\u{1b}]0;PWNED\u{7}".to_string(),
+            alias: "t\u{1b}[1A".to_string(),
             path: "t\u{1b}[1A".to_string(),
             repo: Some("u\u{9b}2J".to_string()),
             tags: vec!["n\nfake".to_string()],
@@ -1045,6 +1074,7 @@ mod tests {
     fn test_format_project_tree_without_remote() {
         let nodes = vec![ProjectTreeNode {
             name: "scratch".to_string(),
+            alias: "scratch".to_string(),
             path: "scratch".to_string(),
             repo: None,
             tags: vec![],
