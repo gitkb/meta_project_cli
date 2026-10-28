@@ -36,9 +36,9 @@ pub struct ExecuteOptions {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProjectTreeNode {
     pub name: String,
-    /// The project's path from the workspace root: how `--recursive`
-    /// commands (`meta git worktree create --recursive --repo`) and
-    /// `meta git worktree list` name it.
+    /// With `--recursive`, the project's path from the workspace root: the
+    /// key `meta_core::config::build_project_map` gives it, which the
+    /// recursive project graph and `meta git worktree list` use.
     pub alias: String,
     pub path: String,
     /// Git remote URL. Should be present for all normal projects.
